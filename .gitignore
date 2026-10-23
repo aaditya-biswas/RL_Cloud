@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Large raw dataset (not distributed through git)
+raw/
+
+# Training artefacts
+models/
+logs/
+runs/
+utils/metrics.csv
+utils/*.png
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,13 @@
+# Core environment
+gymnasium>=0.29
+numpy>=1.24
+pandas>=2.0
+
+# Reinforcement learning
+# CPU-only torch wheel: pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.1
+stable-baselines3>=2.3
+
+# Logging and plots
+tensorboard>=2.14
+matplotlib>=3.7
