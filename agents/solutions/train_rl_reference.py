@@ -55,9 +55,11 @@ Q4. Live monitoring:
 
 Usage
 -----
-    python agents/train_rl.py --dry-run                     # env sanity check only
-    python agents/train_rl.py --algo ppo --timesteps 200000
-    python agents/train_rl.py --algo dqn --timesteps 300000 --learning-rate 1e-4
+    python agents/solutions/train_rl_reference.py --self-check     # 4 x PASS
+    python agents/solutions/train_rl_reference.py --dry-run        # env sanity check
+    python agents/solutions/train_rl_reference.py --algo ppo --timesteps 200000
+    python agents/solutions/train_rl_reference.py --algo dqn --timesteps 300000 \
+        --learning-rate 1e-4
 """
 
 from __future__ import annotations
