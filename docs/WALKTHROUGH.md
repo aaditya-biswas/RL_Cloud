@@ -291,8 +291,8 @@ verifies the class matches `--algo`, both spaces match the env, PPO's `n_steps` 
 | `PPO n_steps=2048, expected 1024` | you hard-coded it instead of using `args.n_steps` |
 
 **Checkpoint.** `--self-check` passes steps 1–2. `python agents/train_rl.py --timesteps 8192`
-now trains for one rollout (steps 3–4 still raise, so it will stop before saving — that is
-expected).
+now builds the env and the model, then stops at step 3 with the friendly "not implemented"
+message — training starts only once all four steps exist.
 
 **Knowledge check.** `--n-envs 8 --batch-size 2048` is accepted, `--n-envs 1 --batch-size
 4096 --n-steps 2048` is not. Why?
@@ -346,9 +346,9 @@ given), `deterministic=True`, the divided `eval_freq`, and the checkpoint path/p
 | `eval_freq=10000; use args.eval_freq // n_envs (=2500)` | trap 1 |
 | `EvalCallback must be given the frozen eval env you built` | you constructed a second eval env inside the callbacks |
 
-**Checkpoint.** `--self-check` passes steps 1–3 and a short run
+**Checkpoint.** `--self-check` passes steps 1–3, and a short run
 (`--timesteps 16384 --eval-freq 8192`) writes `logs/eval/evaluations.npz` plus at least one
-checkpoint in `models/checkpoints/`.
+checkpoint in `models/checkpoints/` before it stops at step 4 with "not implemented".
 
 **Knowledge check.** You have two policies with identical `eval/mean_reward` in TensorBoard
 but they score differently in `utils/evaluate.py`. Which callback ordering bug would explain

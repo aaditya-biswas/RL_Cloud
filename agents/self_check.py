@@ -329,15 +329,19 @@ def run_self_check(module: ModuleType, args: argparse.Namespace) -> int:
             print(f"       - {failure}")
 
     passed = sum(1 for step in results if not results[step])
+    try:
+        script = Path(module.__file__).resolve().relative_to(Path.cwd())
+    except (AttributeError, ValueError):
+        script = Path(getattr(module, "__file__", "agents/train_rl.py")).resolve()
     print()
     print("-" * 74)
     print(f"{passed}/4 steps pass.")
     if passed == 4:
         print("The plumbing is correct. Train with:")
-        print(f"  python agents/train_rl.py --algo {args.algo} --timesteps 200000")
+        print(f"  python {script} --algo {args.algo} --timesteps 200000")
     else:
         print("Read the CONTRACT block in the docstring of the failing function in")
-        print("agents/train_rl.py, implement it, and run --self-check again.")
+        print(f"{script}, implement it, and run --self-check again.")
         print("docs/WALKTHROUGH.md has the reasoning behind each step.")
     print("-" * 74)
     return 0 if passed == 4 else 1
