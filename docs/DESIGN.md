@@ -77,6 +77,36 @@ bin is worth 3.4× the whole day's capacity. The learning signal lives in *one b
 8,640* — an episode sampled uniformly from the day contains it only 17 % of the time. Keep
 that in mind for §6.
 
+### What a constant fleet is actually paying for
+
+The capacity term is linear in mean pods — 1.5 per pod-step = **540 per pod-hour = 12,960 per
+pod-day** — so the bill is exactly `avg pods × 24 h × 540`, and the `--section policies` table
+prints both halves of that product.
+
+| policy | pod-hours paid | breaches | capacity | total |
+|---|---|---|---|---|
+| constant 6 | 144 | 54 | −77,760 | −586,960 |
+| **constant 9** | **216** | **0** | **−116,640** | **−116,640** |
+| trailing 480 s, u = 0.77 | 110 | 0 | −59,376 | −60,088 |
+| DP ceiling | 64 | 0 | −34,434 | −38,658 |
+
+Constant 9 buys 216 pod-hours to serve traffic whose *instantaneous* requirement averages
+**2.31 pods** (55 pod-hours) and whose ±2-feasible optimum is **2.66 pods** (64 pod-hours):
+**161 of its 216 pod-hours — 74 % of the bill — are surplus**, and it holds ≥ 2× what the SLA
+needs on 93 % of the day, ≥ 3× on 83 %. The 3.9× peak/mean ratio is the reason: a constant has
+to be right at 09:49, so it is wrong everywhere else. It is not even knife-edge at the peak —
+480 rps against 540 rps of capacity, 1.0 pod of margin, never above 89 % utilisation — which
+is what makes 9 a *fair* baseline rather than a strawman: it is the cheapest constant that
+survives the day (8 breaches at the peak).
+
+The caveat, because this is easy to over-read: mean pods is the *cost axis*, not the
+objective. Constant 6 has the smallest capacity bill of any constant and the worst return of
+any constant, because it breaches 54 times; "size it to this step" averages 2.82 pods and
+loses to every constant (−186,496, 11 breaches). What holds is domination **at zero
+breaches**: the 480 s tracker sits at (4.58 pods, 0 breaches) and strictly beats (9.00, 0),
+recovering 4.42 of constant 9's 6.34 pods of excess over the 2.66-pod floor. The 1.92 pods it
+leaves on the table are exactly what 20 s of foresight would have bought (§8).
+
 
 ---
 
@@ -119,7 +149,7 @@ edge" — i.e. sit at `max_pods`. That is what the reference agent does: 15.00 a
 ### 2.2 The price is quoted in the wrong unit
 
 `--section price` converts the penalty into the unit the agent actually trades in:
-**pod-steps** (one pod for one 10 s step costs 1.5).
+**pod-steps** (one pod for one 10 s step costs 1.5, i.e. **540 per pod-hour**).
 
 | reward | cost of one 10 s breach at the peak | in pod-steps | in hours of one spare pod |
 |---|---|---|---|
