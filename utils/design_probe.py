@@ -344,8 +344,16 @@ def report_price(trace: np.ndarray) -> None:
 def report_policies(trace: np.ndarray, families=REWARD_FAMILIES) -> None:
     print()
     print("== 3. what a simple policy is worth ==")
-    print("  (tracker u is the best of 0.78..0.96; DP ceiling is perfect foresight)")
+    print("  (tracker u is the best of 0.70..0.96; DP ceiling is perfect foresight)")
     start = auto_pods(trace[0])
+    # (label, forecast, window in steps). The 480 s row matters: memory, not
+    # foresight, is what a causal controller is missing on this trace.
+    trackers = (
+        ("current step", "current", 3),
+        ("trailing 30 s", "trailing", 3),
+        ("trailing 480 s", "trailing", 48),
+        ("oracle 20 s", "oracle", 3),
+    )
     for name in families:
         reward = reward_family(name)
         print()
@@ -356,13 +364,13 @@ def report_policies(trace: np.ndarray, families=REWARD_FAMILIES) -> None:
         for pods in (8, 9, 10, 15):
             rows.append((f"constant {pods} pods",
                          simulate(trace, constant_policy(pods), reward, start_pods=pods)))
-        for forecast in ("current", "trailing", "oracle"):
+        for label, forecast, window in trackers:
             scored = [
-                (simulate(trace, util_policy(trace, u / 100.0, forecast), reward, start), u)
-                for u in range(78, 97)
+                (simulate(trace, util_policy(trace, u / 100.0, forecast, window), reward, start), u)
+                for u in range(70, 97)
             ]
             metrics, u = max(scored, key=lambda item: item[0].total_reward)
-            rows.append((f"{forecast} tracker u={u / 100:.2f}", metrics))
+            rows.append((f"{label} u={u / 100:.2f}", metrics))
         for label, metrics in rows:
             print(f"  {label:30s} {metrics.total_reward:10.0f} {metrics.violations:5d} "
                   f"{metrics.actions:6d} {metrics.avg_pods:6.2f} {metrics.capacity:10.0f} "
@@ -372,13 +380,47 @@ def report_policies(trace: np.ndarray, families=REWARD_FAMILIES) -> None:
               f"{ceiling_actions:6d} {ceiling_pods:6.2f}")
 
 
+def report_actuator(trace: np.ndarray, reward_name: str = "v2") -> None:
+    """Actuator speed (``max_step``) against information (forecast window).
+
+    Answers the question "should I widen the action space instead of fixing the
+    observation?" - a real trade-off in this trace, because 192 steps/day move
+    faster than a +-2 actuator.
+    """
+    reward = reward_family(reward_name)
+    start = auto_pods(trace[0])
+    trackers = (
+        ("current step", "current", 3),
+        ("trailing 30 s", "trailing", 3),
+        ("trailing 480 s", "trailing", 48),
+    )
+    print()
+    print(f"== 4. actuator speed vs information (reward {reward_name}, +-2 rows in bold) ==")
+    print(f"  {'max_step':>8s} {'demand signal':16s} {'best u':>6s} {'return':>10s} "
+          f"{'viol':>5s} {'acts':>6s} {'pods':>6s}")
+    for max_step in (1, 2, 3, 5, 15):
+        for label, forecast, window in trackers:
+            scored = [
+                (simulate(trace, util_policy(trace, u / 100.0, forecast, window),
+                          reward, start, max_step=max_step), u)
+                for u in range(70, 97)
+            ]
+            metrics, u = max(scored, key=lambda item: item[0].total_reward)
+            marker = "*" if max_step == 2 else " "
+            print(f" {marker}{max_step:>7d} {label:16s} {u / 100:6.2f} "
+                  f"{metrics.total_reward:10.0f} {metrics.violations:5d} "
+                  f"{metrics.actions:6d} {metrics.avg_pods:6.2f}")
+
+
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--trace", type=Path, default=None,
                         help="Trace CSV (default: data/workload_trace.csv).")
-    parser.add_argument("--section", choices=["all", "trace", "price", "policies"], default="all")
+    parser.add_argument("--section",
+                        choices=["all", "trace", "price", "policies", "actuator"],
+                        default="all")
     parser.add_argument("--reward", choices=REWARD_FAMILIES, action="append",
                         help="Restrict the policy comparison to these reward families.")
     return parser.parse_args(argv)
@@ -395,6 +437,8 @@ def main(argv=None) -> int:
         report_price(trace)
     if args.section in ("all", "policies"):
         report_policies(trace, families)
+    if args.section == "actuator":
+        report_actuator(trace, families[0] if len(families) == 1 else "v2")
     return 0
 
 

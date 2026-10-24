@@ -611,8 +611,9 @@ python utils/design_probe.py     # reproduces every number quoted here
 The four items below, in short: a linear-and-capped SLA penalty plus churn charged on the
 *requested* delta moves the price of one 10 s breach from 726 hours of a spare pod to 21
 hours — 1.9 hours once the ramp is capped — and an observation built on headroom + a
-trailing peak lets a 30-line heuristic beat constant 9 pods by 18 % (−94,797 vs −116,640)
-— and by 61 % with a 20 s lookahead (−44,996, zero violations). The shipped env still scores
+multi-minute trailing peak lets a 10-line heuristic beat constant 9 pods **by 48 % with zero
+violations** (−60,088 vs −116,640; a 30 s peak gets only 18 % and still breaches 4 times) —
+and by 61 % with a 20 s lookahead (−44,996, zero violations). The shipped env still scores
 the old objective, so §6.1 stays valid and remains the "before" table.
 
 * Penalise the *requested* delta rather than the applied one, so `+2` at `max_pods` is

@@ -7,10 +7,10 @@ policy against the redesigned observation / reward:
 
     env = CloudAutoscalingEnv(episode_steps=1440, random_start=True)
     env = LinearSLAReward(env)   # reward v2: linear, capped, churn on request
-    env = HeadroomObs(env)       # 10-dim observation built around headroom
+    env = HeadroomObs(env)       # 11-dim observation built around headroom
 
 ``HeadroomObs`` *replaces* the observation, so its shape changes from ``(5,)`` to
-``(10,)`` and a model trained on the old shape will not load. That is intentional:
+``(11,)`` and a model trained on the old shape will not load. That is intentional:
 the two observations are different MDPs.
 
 Why these features
@@ -20,8 +20,14 @@ hard to steer on (``ram`` is a lagged function of ``cpu``; ``cpu`` already
 saturates at 1.0), ``rps`` is on an absolute scale that ``VecNormalize`` clips at
 the peak, and ``latency`` is a *lagging* signal: it only leaves the floor once the
 fleet is already overloaded. The wrapper reports everything in pod units - "demand
-is 8.0 pods, I have 9, so 1.0 pod of slack" - plus recent slope and a trailing
-peak, which is the cheapest causal stand-in for a forecast.
+is 8.0 pods, I have 9, so 1.0 pod of slack" - plus recent slope and two trailing
+peaks, which are the cheapest causal stand-in for a forecast.
+
+The second, slow peak is not decoration. The best causal controller on this trace
+provisions to the **8-minute** high-water mark (``docs/DESIGN.md`` section 8:
+-60,088 with zero breaches, versus -94,797 for a 30 s window), and a feed-forward
+policy cannot compute an 8-minute maximum from a 60 s window - whatever the
+network size, the information is not in its input.
 """
 
 from __future__ import annotations
@@ -41,11 +47,11 @@ from env.cloud_env import (
     CloudAutoscalingEnv,
 )
 
-OBS_DIM = 10
+OBS_DIM = 11
 
 
 class HeadroomObs(gym.ObservationWrapper):
-    """Ten features expressed in pod units instead of raw telemetry.
+    """Eleven features expressed in pod units instead of raw telemetry.
 
     ====  ==================================================================
     0     ``cpu_utilization`` (unchanged, still bounded by 1.0)
@@ -56,22 +62,26 @@ class HeadroomObs(gym.ObservationWrapper):
     5     ``headroom_pods`` = ``(pods * mu_pod - rps) / mu_pod``, negative = over
     6     ``slope_pods`` - demand change over the last ``slope_steps`` steps,
           in pods, i.e. "how much more fleet this ramp still needs"
-    7     ``trailing_pods`` - peak demand over the last ``window`` steps
-    8     ``impulse_pods`` - demand change in the last step, in pods per step;
+    7     ``trailing_pods`` - peak demand over the last ``window`` steps (60 s)
+    8     ``peak_pods_slow`` - peak demand over the last ``slow_window`` steps
+          (480 s); the statistic the winning causal policy of section 8 uses
+    9     ``impulse_pods`` - demand change in the last step, in pods per step;
           the 387 rps jumps in this trace read as +6.5 here (clipped at +-1 pod
           per step, i.e. the largest move the actuator can make)
-    9     ``fraction_of_day`` - time-of-day; only useful if you also shift the
+    10    ``fraction_of_day`` - time-of-day; only useful if you also shift the
           trace per episode (see ``docs/DESIGN.md``), otherwise it is an index
     ====  ==================================================================
     """
 
     LATENCY_CAP = 3.0
+    SLOW_WINDOW = 48  # 8 minutes at 10 s/step
 
     def __init__(
         self,
         env: gym.Env,
         window: int = 6,
         slope_steps: int = 3,
+        slow_window: int = SLOW_WINDOW,
         require_wrapped: bool = True,
     ) -> None:
         super().__init__(env)
@@ -79,9 +89,16 @@ class HeadroomObs(gym.ObservationWrapper):
             raise TypeError("HeadroomObs expects a CloudAutoscalingEnv inside")
         self.window = max(1, int(window))
         self.slope_steps = max(1, int(slope_steps))
+        self.slow_window = max(self.window, int(slow_window))
         self._last_ram = 0.0
 
-        low = np.array([0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        # dims: cpu, ram, demand, latency, pods, headroom, slope, fast peak,
+        #       slow peak, impulse, fraction_of_day. The two signed features
+        #       (headroom, slope) and impulse_pods go negative; impulse was
+        #       declared [0, 1] before and left the Box whenever demand fell.
+        low = np.array(
+            [0.0, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 0.0, 0.0, -1.0, 0.0], dtype=np.float32
+        )
         high = np.ones(OBS_DIM, dtype=np.float32)
         # Latency is capped at 3x SLA (600 ms): below that the value is informative,
         # above it "very late" and "dead" are the same decision, and the 3,000 ms
@@ -108,6 +125,7 @@ class HeadroomObs(gym.ObservationWrapper):
         )
         demand = rps / mu_pod
         trailing = float(trace[max(0, index - self.window + 1): index + 1].max()) / mu_pod
+        slow = float(trace[max(0, index - self.slow_window + 1): index + 1].max()) / mu_pod
         # Pods per step of recent growth; +-2 is the action limit, so this reads
         # "how many steps of full ramp this burst still needs".
         slope = (rps - float(trace[max(0, index - self.slope_steps)])) / (
@@ -126,6 +144,7 @@ class HeadroomObs(gym.ObservationWrapper):
                 float(np.clip(headroom, -1.0, 1.0)),
                 float(np.clip(slope, -1.0, 1.0)),
                 min(1.0, trailing / scale),
+                min(1.0, slow / scale),
                 float(np.clip(impulse, -1.0, 1.0)),
                 (index % env.trace_length) / float(env.trace_length),
             ],
