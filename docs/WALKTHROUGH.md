@@ -539,5 +539,11 @@ actual design decision in RL infrastructure work.
 
 * `README.md` §6.2 — put your numbers in, or they do not exist.
 * `README.md` §11 — the reward redesign, if you want to fix the finding instead of beating it.
+* `docs/DESIGN.md` — that redesign, worked out and measured: the traffic analysis, the reward
+  calibration (why one breach should cost 133 pod-steps, not 261,341), the 10-feature
+  observation, the peak-heavy curriculum, and the reference ladder your agent should climb
+  (constant 9 → trailing-max heuristic → 20 s oracle → DP ceiling). Reproduce every number
+  with `python utils/design_probe.py`; the wrappers it describes are in
+  `env/design_wrappers.py`.
 * `agents/solutions/train_rl_reference.py` — diff it against your file. The differences are
   your notes.

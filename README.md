@@ -542,6 +542,12 @@ python utils/evaluate.py --outdir /tmp/bench --seed 7  # custom output dir
 `Total Cost ($)` is a reporting-only metric: `pods × 10 s × $0.12/pod-hour`. The
 training reward uses the specification's `1.5 × pods` term, not dollars.
 
+For a design-level view — what a policy family is worth, and what a reward actually prices —
+run `python utils/design_probe.py` and read [docs/DESIGN.md](docs/DESIGN.md). It trains
+nothing: it replays the same physics to produce a ladder (constant 9 → trailing-max tracker →
+20 s oracle → perfect-foresight ceiling) so you can tell a bad policy apart from a bad reward
+before spending another 200k steps.
+
 ---
 
 ## 9. Design decisions and assumptions
@@ -594,9 +600,20 @@ Known limitations (good material for a report):
 
 ## 11. Ideas to extend
 
-The honest fix for lesson 1 — deliberately **not** shipped, because it would remove the
-bar the workbook is built around. Each item is a reward/observation redesign, and each
-one needs a re-run of §6.2 to be judged:
+The honest fix for lesson 1 — deliberately **not** shipped in the default environment,
+because it would remove the bar the workbook is built around. It *is* implemented as opt-in
+wrappers and measured end to end in **[docs/DESIGN.md](docs/DESIGN.md)**:
+
+```bash
+python utils/design_probe.py     # reproduces every number quoted here
+```
+
+The four items below, in short: a linear-and-capped SLA penalty plus churn charged on the
+*requested* delta moves the price of one 10 s breach from 726 hours of a spare pod to 21
+hours — 1.9 hours once the ramp is capped — and an observation built on headroom + a
+trailing peak lets a 30-line heuristic beat constant 9 pods by 18 % (−94,797 vs −116,640)
+— and by 61 % with a 20 s lookahead (−44,996, zero violations). The shipped env still scores
+the old objective, so §6.1 stays valid and remains the "before" table.
 
 * Penalise the *requested* delta rather than the applied one, so `+2` at `max_pods` is
   no longer a free no-op, and the "always push up" policy stops being stable.
@@ -608,6 +625,12 @@ one needs a re-run of §6.2 to be judged:
   worth 1.25, so "one bad second" and "a slightly laggy day" are not comparable.
 * Curriculum: start episodes at 9 pods (or at the analytically safe fleet) so the
   agent sees the non-violating region early instead of discovering it by accident.
+
+All four are implemented in `env/design_wrappers.py` (`LinearSLAReward`, `HeadroomObs`) and
+measured in [docs/DESIGN.md](docs/DESIGN.md) §3–§6 — the numbers there supersede the
+hand-waving here. The measured version of the curriculum item is *peak-heavy episode
+starts* rather than a fixed 9-pod start: the 09:49 spike carries more reward than the whole
+rest of the day and appears in only 17 % of uniformly sampled 4 h episodes.
 
 Beyond the reward design:
 
