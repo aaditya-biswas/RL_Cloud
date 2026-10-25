@@ -1,0 +1,361 @@
+{
+  "generated_at": "2026-10-26T02:21:57",
+  "raw_log": "raw/access_log_Jul95",
+  "target_peak_rps": 480.0,
+  "steps_per_day": 8640,
+  "step_seconds": 10,
+  "split": {
+    "train": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "val": [
+      17,
+      18,
+      19,
+      20,
+      21,
+      22
+    ],
+    "test": [
+      23,
+      24,
+      25,
+      26,
+      27,
+      28
+    ]
+  },
+  "files": {
+    "train": [
+      "data/days/day_01.csv",
+      "data/days/day_02.csv",
+      "data/days/day_03.csv",
+      "data/days/day_04.csv",
+      "data/days/day_05.csv",
+      "data/days/day_06.csv",
+      "data/days/day_07.csv",
+      "data/days/day_08.csv",
+      "data/days/day_09.csv",
+      "data/days/day_10.csv",
+      "data/days/day_11.csv",
+      "data/days/day_12.csv",
+      "data/days/day_13.csv",
+      "data/days/day_14.csv",
+      "data/days/day_15.csv",
+      "data/days/day_16.csv"
+    ],
+    "val": [
+      "data/days/day_17.csv",
+      "data/days/day_18.csv",
+      "data/days/day_19.csv",
+      "data/days/day_20.csv",
+      "data/days/day_21.csv",
+      "data/days/day_22.csv"
+    ],
+    "test": [
+      "data/days/day_23.csv",
+      "data/days/day_24.csv",
+      "data/days/day_25.csv",
+      "data/days/day_26.csv",
+      "data/days/day_27.csv",
+      "data/days/day_28.csv"
+    ]
+  },
+  "days": {
+    "1": {
+      "date": "1995-07-01",
+      "weekday": "Sat",
+      "split": "train",
+      "mean_rps": 125.58,
+      "p95_rps": 264.83,
+      "peak_rps": 480.0,
+      "native_peak_rps": 2.9,
+      "scale_factor": 165.517
+    },
+    "2": {
+      "date": "1995-07-02",
+      "weekday": "Sun",
+      "split": "train",
+      "mean_rps": 99.74,
+      "p95_rps": 211.76,
+      "peak_rps": 480.0,
+      "native_peak_rps": 3.4,
+      "scale_factor": 141.176
+    },
+    "3": {
+      "date": "1995-07-03",
+      "weekday": "Mon",
+      "split": "train",
+      "mean_rps": 94.4,
+      "p95_rps": 199.25,
+      "peak_rps": 480.0,
+      "native_peak_rps": 5.3,
+      "scale_factor": 90.566
+    },
+    "4": {
+      "date": "1995-07-04",
+      "weekday": "Tue",
+      "split": "train",
+      "mean_rps": 87.47,
+      "p95_rps": 181.33,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.5,
+      "scale_factor": 106.667
+    },
+    "5": {
+      "date": "1995-07-05",
+      "weekday": "Wed",
+      "split": "train",
+      "mean_rps": 103.82,
+      "p95_rps": 244.71,
+      "peak_rps": 480.0,
+      "native_peak_rps": 5.1,
+      "scale_factor": 94.118
+    },
+    "6": {
+      "date": "1995-07-06",
+      "weekday": "Thu",
+      "split": "train",
+      "mean_rps": 117.61,
+      "p95_rps": 260.0,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.8,
+      "scale_factor": 100.0
+    },
+    "7": {
+      "date": "1995-07-07",
+      "weekday": "Fri",
+      "split": "train",
+      "mean_rps": 80.42,
+      "p95_rps": 188.85,
+      "peak_rps": 480.0,
+      "native_peak_rps": 6.1,
+      "scale_factor": 78.689
+    },
+    "8": {
+      "date": "1995-07-08",
+      "weekday": "Sat",
+      "split": "train",
+      "mean_rps": 73.23,
+      "p95_rps": 170.32,
+      "peak_rps": 480.0,
+      "native_peak_rps": 3.1,
+      "scale_factor": 154.839
+    },
+    "9": {
+      "date": "1995-07-09",
+      "weekday": "Sun",
+      "split": "train",
+      "mean_rps": 87.93,
+      "p95_rps": 220.0,
+      "peak_rps": 480.0,
+      "native_peak_rps": 2.4,
+      "scale_factor": 200.0
+    },
+    "10": {
+      "date": "1995-07-10",
+      "weekday": "Mon",
+      "split": "train",
+      "mean_rps": 95.58,
+      "p95_rps": 223.26,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.3,
+      "scale_factor": 111.628
+    },
+    "11": {
+      "date": "1995-07-11",
+      "weekday": "Tue",
+      "split": "train",
+      "mean_rps": 98.56,
+      "p95_rps": 229.56,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.6,
+      "scale_factor": 104.348
+    },
+    "12": {
+      "date": "1995-07-12",
+      "weekday": "Wed",
+      "split": "train",
+      "mean_rps": 96.18,
+      "p95_rps": 213.33,
+      "peak_rps": 480.0,
+      "native_peak_rps": 5.4,
+      "scale_factor": 88.889
+    },
+    "13": {
+      "date": "1995-07-13",
+      "weekday": "Thu",
+      "split": "train",
+      "mean_rps": 96.84,
+      "p95_rps": 246.15,
+      "peak_rps": 480.0,
+      "native_peak_rps": 7.8,
+      "scale_factor": 61.538
+    },
+    "14": {
+      "date": "1995-07-14",
+      "weekday": "Fri",
+      "split": "train",
+      "mean_rps": 117.55,
+      "p95_rps": 264.0,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.0,
+      "scale_factor": 120.0
+    },
+    "15": {
+      "date": "1995-07-15",
+      "weekday": "Sat",
+      "split": "train",
+      "mean_rps": 90.24,
+      "p95_rps": 198.62,
+      "peak_rps": 480.0,
+      "native_peak_rps": 2.9,
+      "scale_factor": 165.517
+    },
+    "16": {
+      "date": "1995-07-16",
+      "weekday": "Sun",
+      "split": "train",
+      "mean_rps": 98.41,
+      "p95_rps": 222.86,
+      "peak_rps": 480.0,
+      "native_peak_rps": 2.8,
+      "scale_factor": 171.429
+    },
+    "17": {
+      "date": "1995-07-17",
+      "weekday": "Mon",
+      "split": "val",
+      "mean_rps": 111.44,
+      "p95_rps": 265.26,
+      "peak_rps": 480.0,
+      "native_peak_rps": 3.8,
+      "scale_factor": 126.316
+    },
+    "18": {
+      "date": "1995-07-18",
+      "weekday": "Tue",
+      "split": "val",
+      "mean_rps": 80.54,
+      "p95_rps": 208.7,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.6,
+      "scale_factor": 104.348
+    },
+    "19": {
+      "date": "1995-07-19",
+      "weekday": "Wed",
+      "split": "val",
+      "mean_rps": 97.35,
+      "p95_rps": 228.57,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.2,
+      "scale_factor": 114.286
+    },
+    "20": {
+      "date": "1995-07-20",
+      "weekday": "Thu",
+      "split": "val",
+      "mean_rps": 90.03,
+      "p95_rps": 217.14,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.2,
+      "scale_factor": 114.286
+    },
+    "21": {
+      "date": "1995-07-21",
+      "weekday": "Fri",
+      "split": "val",
+      "mean_rps": 97.35,
+      "p95_rps": 240.0,
+      "peak_rps": 480.0,
+      "native_peak_rps": 3.8,
+      "scale_factor": 126.316
+    },
+    "22": {
+      "date": "1995-07-22",
+      "weekday": "Sat",
+      "split": "val",
+      "mean_rps": 83.55,
+      "p95_rps": 211.2,
+      "peak_rps": 480.0,
+      "native_peak_rps": 2.5,
+      "scale_factor": 192.0
+    },
+    "23": {
+      "date": "1995-07-23",
+      "weekday": "Sun",
+      "split": "test",
+      "mean_rps": 95.58,
+      "p95_rps": 220.0,
+      "peak_rps": 480.0,
+      "native_peak_rps": 2.4,
+      "scale_factor": 200.0
+    },
+    "24": {
+      "date": "1995-07-24",
+      "weekday": "Mon",
+      "split": "test",
+      "mean_rps": 83.15,
+      "p95_rps": 218.18,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.4,
+      "scale_factor": 109.091
+    },
+    "25": {
+      "date": "1995-07-25",
+      "weekday": "Tue",
+      "split": "test",
+      "mean_rps": 91.83,
+      "p95_rps": 233.85,
+      "peak_rps": 480.0,
+      "native_peak_rps": 3.9,
+      "scale_factor": 123.077
+    },
+    "26": {
+      "date": "1995-07-26",
+      "weekday": "Wed",
+      "split": "test",
+      "mean_rps": 73.1,
+      "p95_rps": 187.83,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.6,
+      "scale_factor": 104.348
+    },
+    "27": {
+      "date": "1995-07-27",
+      "weekday": "Thu",
+      "split": "test",
+      "mean_rps": 85.28,
+      "p95_rps": 210.73,
+      "peak_rps": 480.0,
+      "native_peak_rps": 4.1,
+      "scale_factor": 117.073
+    },
+    "28": {
+      "date": "1995-07-28",
+      "weekday": "Fri",
+      "split": "test",
+      "mean_rps": 153.74,
+      "p95_rps": 240.0,
+      "peak_rps": 480.0,
+      "native_peak_rps": 3.2,
+      "scale_factor": 150.0
+    }
+  }
+}

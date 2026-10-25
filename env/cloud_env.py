@@ -28,7 +28,7 @@ Because RAM is part of the observation the MDP remains Markov.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import gymnasium as gym
 import numpy as np
@@ -102,6 +102,13 @@ class CloudAutoscalingEnv(gym.Env):
     random_start:
         If True each ``reset`` starts at a random offset, which improves
         coverage during training. Evaluation should keep this False.
+    trace_paths:
+        Optional list of traces. When given, every ``reset`` draws one of them
+        uniformly *for the whole episode* - this is how a train/validation/test
+        split by day is expressed (see ``utils/build_days.py``). ``trace_path``
+        is then ignored for the replay, but the observation scale ``max_rps`` is
+        held at the maximum over all days so the observation does not change
+        meaning from one episode to the next.
     initial_pods:
         ``"auto"`` sizes the fleet from the first traffic sample; an int forces
         a cold start at that pod count.
@@ -131,11 +138,20 @@ class CloudAutoscalingEnv(gym.Env):
         initial_pods: Any = "auto",
         render_mode: Optional[str] = None,
         seed: Optional[int] = None,
+        trace_paths: Optional[Sequence[Path]] = None,
     ) -> None:
         super().__init__()
 
-        self.trace = load_trace(trace_path)
-        self.trace_path = Path(trace_path) if trace_path else DEFAULT_TRACE_PATH
+        self._day_paths: List[Path] = [Path(p) for p in trace_paths] if trace_paths else []
+        self._day_traces: List[np.ndarray] = [load_trace(p) for p in self._day_paths]
+        if trace_paths and not self._day_paths:
+            raise ValueError("trace_paths was given but empty")
+        self.trace = self._day_traces[0] if self._day_traces else load_trace(trace_path)
+        self.trace_path = (
+            self._day_paths[0] if self._day_paths
+            else (Path(trace_path) if trace_path else DEFAULT_TRACE_PATH)
+        )
+        self.day_name = self.trace_path.stem
         self.trace_length = int(self.trace.size)
         self.step_seconds = int(step_seconds)
 
@@ -155,7 +171,10 @@ class CloudAutoscalingEnv(gym.Env):
         self.churn_weight = float(churn_weight)
         self.reward_scale = float(reward_scale)
 
-        self.episode_steps = int(episode_steps) if episode_steps else self.trace_length
+        # Every day in ``trace_paths`` is 8,640 steps; the shortest one wins so an
+        # episode can never run off the end of a trace.
+        shortest = min((t.size for t in self._day_traces), default=self.trace_length)
+        self.episode_steps = int(episode_steps) if episode_steps else int(shortest)
         if self.episode_steps < 1:
             raise ValueError("episode_steps must be >= 1")
         self.random_start = bool(random_start)
@@ -163,7 +182,11 @@ class CloudAutoscalingEnv(gym.Env):
         self.render_mode = render_mode
         self._initial_seed = seed
 
-        self.max_rps = float(self.trace.max())
+        # Fixed across episodes on purpose: the observation scale must not drift
+        # when the day changes, or "demand_pods = 0.8" means something different
+        # on a quiet day than on a busy one.
+        self.max_rps = float(max(t.max() for t in self._day_traces)) if self._day_traces \
+            else float(self.trace.max())
         obs_low = np.array([0.0, 0.0, 0.0, 0.0, float(self.min_pods)], dtype=np.float32)
         obs_high = np.array(
             [1.0, 1.0, max(1.0, self.max_rps * 1.25), self.overload_latency_ms, float(self.max_pods)],
@@ -186,6 +209,21 @@ class CloudAutoscalingEnv(gym.Env):
         pods = int(np.ceil(max(rps, 1e-9) / (0.80 * self.mu_pod)))
         return int(np.clip(pods, self.min_pods, self.max_pods))
 
+    def _select_day(self) -> str:
+        """Draw the episode's trace from ``trace_paths``; no-op for a single trace.
+
+        The day is fixed for the whole episode (picked in ``reset``), so a
+        training episode is a coherent 4 h window of one real day rather than a
+        stitched sequence of unrelated days.
+        """
+        if len(self._day_traces) > 1:
+            k = int(self.np_random.integers(len(self._day_traces)))
+            self.trace = self._day_traces[k]
+            self.trace_path = self._day_paths[k]
+            self.trace_length = int(self.trace.size)
+        self.day_name = self.trace_path.stem
+        return self.day_name
+
     def _latency_ms(self, rps: float, mu_total: float) -> float:
         """Simplified M/M/k latency, capped so it always fits the observation box."""
         if mu_total > rps:
@@ -207,6 +245,7 @@ class CloudAutoscalingEnv(gym.Env):
         self._initial_seed = None
         super().reset(seed=seed)
 
+        day = self._select_day()
         options = options or {}
         start = options.get("start_index")
         horizon = int(options.get("episode_steps", self.episode_steps))
@@ -232,7 +271,7 @@ class CloudAutoscalingEnv(gym.Env):
         cpu0 = min(1.0, float(self.trace[start]) / (self._pods * self.mu_pod))
         self._ram = float(np.clip(RAM_IDLE_UTILIZATION + RAM_LOAD_COEFFICIENT * cpu0, 0.0, 1.0))
 
-        info = {"start_index": start, "episode_steps": self._episode_length}
+        info = {"start_index": start, "episode_steps": self._episode_length, "day": day}
         return self._state_at(start), info
 
     def step(self, action: int):

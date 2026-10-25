@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import sys
 import time
 from pathlib import Path
@@ -100,18 +101,52 @@ DEFAULT_CONFIG = {
 
 
 # --------------------------------------------------------------------- the stack
+def train_day_paths(args: argparse.Namespace) -> list[Path]:
+    """The train split, as a sorted list of day files.
+
+    Two ways to define it: ``--split-json`` (the frozen manifest written by
+    ``utils/build_days.py``; its ``files.train`` list is the contract) or, without
+    it, every ``day_*.csv`` inside ``--train-days``. The manifest route is what
+    the documented commands use, so a directory that happens to contain the test
+    days cannot silently leak into training.
+    """
+    root = getattr(args, "train_days", None)
+    if not root:
+        return []
+
+    manifest_path = getattr(args, "split_json", None)
+    if manifest_path:
+        manifest = json.loads(Path(manifest_path).expanduser().read_text())
+        paths = [PROJECT_ROOT / entry for entry in manifest["files"]["train"]]
+        missing = [str(p) for p in paths if not p.exists()]
+        if missing:
+            raise FileNotFoundError(f"--split-json lists missing traces: {missing}")
+        return paths
+
+    paths = sorted(Path(root).expanduser().glob("day_*.csv"))
+    if not paths:
+        raise FileNotFoundError(f"--train-days {root} contains no day_*.csv")
+    return paths
+
+
 def make_env(args: argparse.Namespace, episode_steps, random_start: bool, seed: int,
-             price: float = 0.0):
+             price: float = 0.0, trace: Path | None = None, use_days: bool = True):
     """Factory for one sub-environment: base env -> reward v3 -> obs v2 -> Monitor.
 
     The order matters for readability only: ``HeadroomObs`` reads pod counts from
     ``env.unwrapped`` and ``LinearSLAReward`` reads ``info``, so both orders give
     the same numbers (``--design-check`` asserts exactly that).
+
+    ``use_days`` attaches the whole train split to the environment, so every
+    episode replays one randomly drawn day. The evaluation environment must pass
+    ``use_days=False`` (with ``trace=--eval-trace``), otherwise it would sample
+    training days and the eval curve would be measured on the training set.
     """
 
     def _init():
         env = CloudAutoscalingEnv(
-            trace_path=args.trace,
+            trace_path=trace or args.trace,
+            trace_paths=(train_day_paths(args) or None) if use_days else None,
             episode_steps=episode_steps,
             random_start=random_start,
             initial_pods="auto",
@@ -137,6 +172,8 @@ def build_design_env(
     n_envs: int | None = None,
     norm_reward: bool = True,
     price: float | None = None,
+    trace: Path | None = None,
+    use_days: bool = True,
 ) -> VecNormalize:
     """Vectorised, normalised design-stack environment.
 
@@ -150,7 +187,8 @@ def build_design_env(
     base_seed = args.seed if seed is None else int(seed)
     start_price = args.lambda_init if price is None else float(price)
     venv = DummyVecEnv(
-        [make_env(args, episode_steps, random_start, base_seed + rank, start_price)
+        [make_env(args, episode_steps, random_start, base_seed + rank, start_price,
+                  trace=trace, use_days=use_days)
          for rank in range(n)]
     )
     return VecNormalize(
@@ -345,6 +383,7 @@ def make_callbacks(args: argparse.Namespace, train_env: VecNormalize,
             save_freq=max(1, args.checkpoint_freq // args.n_envs),
             save_path=str(MODELS_DIR / "checkpoints"),
             name_prefix=args.tag,
+            save_vecnormalize=True,
         ),
     ]
     return CallbackList(callbacks)
@@ -414,13 +453,16 @@ def _replay(env, actions):
 
 
 def design_check(args: argparse.Namespace) -> int:
-    """Five assertions that must hold before any learning number is quotable.
+    """Seven assertions that must hold before any learning number is quotable.
 
     1. wrapper reward == probe reward, wrapper order ``reward_inner``
     2. wrapper reward == probe reward, wrapper order ``obs_inner``
     3. every observation inside the declared ``Box``
     4. ``price`` arithmetic: ``reward(p) == reward(0) - p * violations``
     5. the vectorised env: ``env_method`` price plumbing, ``clip_reward=inf``
+    6. the day split (needs ``--train-days``): episodes draw from the split,
+       reproducibly per seed, and stay inside the ``Box`` on every day
+    7. the eval env never draws a training day (``use_days=False``)
     """
     from utils.design_probe import reward_family
 
@@ -497,7 +539,7 @@ def design_check(args: argparse.Namespace) -> int:
 
     # 5 - vectorised plumbing: env_method reaches every sub-env
     venv = build_design_env(args, episode_steps=64, random_start=True, seed=args.seed,
-                            n_envs=2, norm_reward=True, price=0.0)
+                            n_envs=2, norm_reward=True, price=0.0, use_days=False)
     before = venv.env_method("get_price")
     venv.env_method("set_price", 12.5)
     after = venv.env_method("get_price")
@@ -512,6 +554,46 @@ def design_check(args: argparse.Namespace) -> int:
            f"price {before} -> {after}, clip_reward={venv.clip_reward}, "
            f"obs={tuple(obs.shape)}, reward={np.round(rewards, 2).tolist()}")
     venv.close()
+
+    # 6 + 7 - the train/validation day split. With --train-days the episode day
+    # must be drawn from the split, reproducible for a seed, different for another
+    # seed, and the evaluation env must never draw from it. Without --train-days
+    # the single-trace behaviour has to be untouched (day name constant).
+    days = train_day_paths(args)
+    if days:
+        def _names(seed: int) -> list[str]:
+            env = CloudAutoscalingEnv(trace_path=days[0], trace_paths=days,
+                                      episode_steps=min(steps, 1_440),
+                                      random_start=True, seed=seed)
+            out = []
+            # Enough draws that missing a day is a ~1e-7 event even for a 28-day
+            # pool: 20 * len(days), so every day must actually appear.
+            for _ in range(max(40, 20 * len(days))):
+                _, info = env.reset()
+                out.append(str(info["day"]))
+                if not env.observation_space.contains(env._state_at(env.current_index)):
+                    out.append("OUTSIDE_BOX")
+            return out
+
+        names_a, names_b, names_c = _names(7), _names(7), _names(99)
+        expected_days = {p.stem for p in days}
+        report("day split", names_a == names_b and set(names_a) == expected_days
+               and names_a != names_c and "OUTSIDE_BOX" not in names_a,
+               f"{len(days)} train days, {len(set(names_a))} visited in {len(names_a)} "
+               f"resets, seed-reproducible, other seed differs")
+
+        eval_day = Path(args.eval_trace or args.trace or DEFAULT_TRACE_PATH)
+        eval_env_check = make_env(args, min(steps, 1_440), False, 0,
+                                  trace=eval_day, use_days=False)()
+        eval_names = {str(eval_env_check.reset()[1]["day"]) for _ in range(5)}
+        report("eval day isolation", eval_names == {eval_day.stem},
+               f"eval resets always report {sorted(eval_names)} (expected {eval_day.stem})")
+    else:
+        env = CloudAutoscalingEnv(trace_path=args.trace, episode_steps=steps,
+                                  random_start=True, seed=7)
+        names = [str(env.reset()[1]["day"]) for _ in range(5)]
+        report("day split", len(set(names)) == 1,
+               f"single trace: day={names[0]!r} on all 5 resets (no split requested)")
 
     print()
     if failures:
@@ -558,6 +640,16 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--trace", type=Path, default=None,
                         help="Trace CSV (default: "
                              f"{DEFAULT_TRACE_PATH.relative_to(PROJECT_ROOT)}).")
+    parser.add_argument("--train-days", type=Path, default=None,
+                        help="Directory of day_*.csv files; each training episode "
+                             "replays one randomly drawn day. Omit for single-trace "
+                             "training (the original behaviour).")
+    parser.add_argument("--eval-trace", type=Path, default=None,
+                        help="Validation day used by EvalCallback / the eval curve "
+                             "(default: --trace). Must not be inside --train-days.")
+    parser.add_argument("--split-json", type=Path, default=None,
+                        help="results/split.json; when given, the train split is its "
+                             "files.train list (keeps test days out of training).")
 
     group = parser.add_argument_group("training")
     group.add_argument("--timesteps", type=int, default=DEFAULT_CONFIG["timesteps"])
@@ -613,8 +705,13 @@ def main(argv=None) -> int:
     (LOGS_DIR / "tb").mkdir(parents=True, exist_ok=True)
 
     train_env = build_design_env(args, args.episode_steps, True, args.seed, norm_reward=True)
-    eval_env = build_design_env(args, args.episode_steps, False, args.seed + 1_000,
-                                n_envs=1, norm_reward=False)
+    # The eval env replays the *whole* validation day (episode_steps=None), not the
+    # 4 h training window: an eval curve measured on 00:00-04:00 of one day only
+    # sees the quietest quarter of the trace and would rank seeds by night-time
+    # behaviour.
+    eval_env = build_design_env(args, None, False, args.seed + 1_000,
+                                n_envs=1, norm_reward=False,
+                                trace=args.eval_trace or args.trace, use_days=False)
     if args.dry_run:
         return _dry_run(args, train_env)
 

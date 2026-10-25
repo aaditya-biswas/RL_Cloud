@@ -637,8 +637,12 @@ Beyond the reward design:
 
 * Add a pod warm-up delay (`pods_pending`) and make the action space include a
   "reserve" action — much harder, more realistic credit assignment.
-* Train on multiple days from the log (Jul 1–28) and test on a held-out day to
-  measure generalisation across daily shapes.
+* ~~Train on multiple days from the log (Jul 1–28) and test on a held-out day to
+  measure generalisation across daily shapes.~~ **Done** — `utils/build_days.py`
+  materialises all 28 days and freezes a chronological 16/6/6 split, the
+  environment samples a day per episode (`--train-days` + `--split-json`), and
+  every arm is scored on the six held-out days. Results: `results/summary.md`,
+  figures in `plots/`, method and limits in [docs/DESIGN.md](docs/DESIGN.md) §12.
 * Replace the synthetic latency with a queue simulation (`simpy`) and log real
   request-level p99.
 * Action masking for `pods == 1` (cannot scale below) to remove wasted actions.

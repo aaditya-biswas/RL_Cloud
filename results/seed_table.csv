@@ -1,0 +1,16 @@
+run,rung,policy,seed,steps_trained,ablate,test_days,violations,days_with_violation,mean_return_v3,worst_return_v3,avg_pods,max_latency_ms,beats_hold,violation_free,accepted
+b1-u0.70,baseline,b1,0,0,none,6,3,3,-76975.0,-90116.0,5.810416666666666,3000.0,True,False,False
+b1-u0.77,baseline,b1,0,0,none,6,4,3,-71583.08333333333,-83199.5,5.393190586419753,3000.0,True,False,False
+hold9,baseline,hold,0,0,none,6,0,0,-116640.0,-116640.0,9.0,31.666666666666668,False,True,False
+r1-ablate-time-s2,R1,model,2,200000,time,6,5,3,-73529.75,-83879.5,5.122820216049383,3000.0,True,False,False
+r1-ablate-time-s3,R1,model,3,200000,time,6,26,6,-62052.16606638231,-70605.0,4.22650462962963,3000.0,True,False,False
+r1-ablate-time-s42,R1,model,42,200000,time,6,50,6,-74996.97971987068,-89421.0,3.923630401234568,3000.0,True,False,False
+r1-day16-s2,R1,model,2,200000,none,6,5,3,-72198.66666666667,-88714.5,5.264506172839506,3000.0,True,False,False
+r1-day16-s3,R1,model,3,200000,none,6,18,6,-60829.99939971565,-69717.0,4.239506172839506,3000.0,True,False,False
+r1-day16-s42,R1,model,42,200000,none,6,12,5,-64344.07406011707,-77648.5,4.478452932098765,3000.0,True,False,False
+r3-ablate-time-s2,R3,model,2,200000,time,6,7,4,-83570.33333333333,-89025.5,5.878626543209877,3000.0,True,False,False
+r3-ablate-time-s3,R3,model,3,200000,time,6,10,5,-81123.74072678374,-98303.0,4.416184413580247,3000.0,True,False,False
+r3-ablate-time-s42,R3,model,42,200000,time,6,2,2,-75382.83333333333,-84015.5,5.734220679012346,3000.0,True,False,False
+r3-day16-s2,R3,model,2,200000,none,6,3,2,-84148.58333333333,-87366.5,6.380497685185186,3000.0,True,False,False
+r3-day16-s3,R3,model,3,200000,none,6,3,2,-82154.96203788574,-84998.5,5.140027006172839,3000.0,True,False,False
+r3-day16-s42,R3,model,42,200000,none,6,2,2,-72151.75,-87229.0,5.353375771604938,3000.0,True,False,False

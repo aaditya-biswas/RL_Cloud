@@ -811,5 +811,158 @@ TensorBoard records the constraint controller: `sla/price`, `sla/violation_rate`
 reward-only route; a price pinned at `--lambda-max` means it saturated, and per §11.4
 saturation is not compliance.
 
+## 12. One day is not a benchmark: the 16/6/6 split
+
+§11 ends with a caveat: 200k steps, one PPO configuration, **one trace**, three seeds. The
+single trace is the weakest part of that list. Day 13 alone cannot separate "learned to
+autoscale" from "memorised Thursday the 13th", and it cannot fail a policy on a day whose
+ramp is steeper. The log holds 28 days (1-28 Jul 1995), so this section trains on 16 of
+them and scores on 6 that no run has ever seen.
+
+### 12.1 What changed, and why each change was needed
+
+* **`utils/build_days.py`** replays every day to `data/days/day_DD.csv` and freezes a
+  **chronological** split (train 01-16, val 17-22, test 23-28) in `results/split.json`.
+  Chronological, not shuffled: day 17 follows day 16 in real time, so a shuffled split
+  would leak the shape of the following day into training.
+* **Every day is rescaled to the same 480 RPS peak.** Shape varies, difficulty ceiling does
+  not, so the constant-9 row stays a fixed yardstick (−116,640 on every day) instead of a
+  moving target.
+* **`CloudAutoscalingEnv(trace_paths=[...])`** draws one day per `reset()` and keeps it for
+  the whole episode. `max_rps` is *not* recomputed per day: freezing the observation scale
+  to the pool maximum keeps `peak480 = 0.8` meaning the same traffic on a quiet day and on
+  a busy one. A single-trace env behaves exactly as before.
+* **`train_sla.py --train-days --split-json --eval-trace`** take the train list from the
+  manifest, so a directory that happens to contain the test days cannot leak into training.
+  The eval env replays the **whole** validation day (not the 4 h training window): scoring a
+  seed on 00:00-04:00 of one day ranks seeds by night-time behaviour.
+* **`CheckpointCallback(save_vecnormalize=True)`**, which was missing: without the matching
+  `VecNormalize` statistics a mid-training checkpoint is fed raw observations, and every
+  number scored from it is wrong.
+* **`--design-check` is now 8/8**: the day split is seed-reproducible, every train day is
+  visited, every observation on every day is inside the `Box`, and the eval env never draws
+  a training day.
+
+### 12.2 The scripted rungs on unseen days
+
+| policy | split | days | violations | return v3 | worst day | avg pods |
+|---|---|---|---|---|---|---|
+| constant 9 pods | train / val / test | 16 / 6 / 6 | 0 / 0 / 0 | −116,640 | −116,640 | 9.00 |
+| trailing max 480 s, u=0.77 | test | 6 | **4** | −71,583 | −83,200 | 5.39 |
+| trailing max 480 s, u=0.70 | test | 6 | **3** | −76,975 | −90,116 | 5.81 |
+| trailing max 480 s, u=0.77 | train | 16 | 9 | −72,210 | −92,198 | 5.45 |
+| trailing max 480 s, u=0.70 | train | 16 | 8 | −78,443 | −100,559 | 5.92 |
+
+The row that matters is the third column: **the tracker is not clean either.** On day 13 it
+was (0 violations, −60,088); across 28 days it breaches on 4 test days and 9 training days.
+The same one-step signature as the learner: the trailing 480 s window is a step behind a
+ramp, and one pod short at the cliff is 3,000 ms. §11's "the safety was available at a cost
+the learner was already paying" is therefore too generous — at u=0.77 the heuristic was
+buying that safety on *that* day, not in general. What survives is the cost claim: the
+tracker is ~45,000 cheaper than hold-9 on average and ~44,000 cheaper on test.
+
+### 12.3 The learned arms, six unseen days, three seeds
+
+| rung | seeds | violations (test) | days with a breach | return v3 (test) | worst day | avg pods |
+|---|---|---|---|---|---|---|
+| R1 reward only (`--lambda-lr 0`) | 2,3,42 | 5 / 18 / 12 | 3 / 6 / 5 | −65,791 ± 5,821 | −88,714 | 4.66 |
+| R3 Lagrangian, price step 20,000 | 2,3,42 | 3 / 3 / 2 | 2 / 3 / 2 | −79,485 ± 6,429 | −87,366 | 5.62 |
+
+Both rungs are cheaper than hold-9 on every one of the six test days — the §11 cost result
+replicates out of sample, which is the one thing a single trace could not establish. The
+safety result replicates too: **no seed of either rung is violation-free on any test day's
+worth of traffic**, and the breaches are still single 3,000 ms steps.
+
+The price does buy something, just not compliance: R3 breaches 2.7 steps per six days
+against R1's 11.7, at a cost of ~13,700 (~21 %) more. That is the first measurement in this
+document where the Lagrangian route changes the safety/cost trade-off in the direction it
+was designed to — and it still cannot clear zero.
+
+### 12.4 The decision rule, applied
+
+The rule was fixed before the run: a rung is accepted iff **every seed is violation-free on
+every test day** and its mean test return v3 beats the constant-9 line.
+
+| arm | violations (test, all seeds) | violations == 0? | cheaper than −116,640? | accepted |
+|---|---|---|---|---|
+| R1 reward only | 35 | no | yes (−65,791) | **no** |
+| R3 Lagrangian | 8 | no | yes (−79,485) | **no** |
+| trailing max 480 s, u=0.77 | 4 | no | yes (−71,583) | **no** |
+| constant 9 pods | 0 | yes | — (it *is* the line) | — |
+
+**No arm is accepted.** Cheapest is R1 seed 3 at −60,830 — 55,810 cheaper than hold-9 and 18
+breaches; safest is R3 seed 42 at 2 breaches and −72,152. On 6 unseen days the ranking is
+"R1 cheapest, R3 safest, neither clean", and the scripted tracker sits between them.
+
+That is the honest summary of this experiment: with 16× the training days, the cost claim
+survives out of sample, and the safety claim fails on every arm including the heuristic.
+
+### 12.5 The time-feature ablation
+
+Scoring the same checkpoints with `fraction_of_day` zeroed (`--ablate time`, the transfer
+test from §5 of the reward design):
+
+| rung | violations, full | violations, no clock | return v3, full | return v3, no clock |
+|---|---|---|---|---|
+| R1 | 11.7 | 27.0 | −65,791 | −70,193 |
+| R3 | 2.7 | 6.3 | −79,485 | −80,026 |
+
+Removing the clock roughly doubles breaches in both rungs while moving cost by ~4,500 (R1)
+and ~500 (R3). Read together: the policy does use the time index, but as a *safety* cue, not
+as the mechanism behind its cost advantage. A policy that still beats hold-9 with the clock
+removed is not memorising the daily schedule; it is one that gets worse at the cliff without
+it. That is a narrower and more useful claim than "the model learned the diurnal shape".
+
+### 12.6 What this section does and does not establish
+
+* **Established.** The cost result generalises: every seed of both rungs is cheaper than
+  hold-9 on all 6 unseen days, with one PPO configuration and the same reward stack.
+* **Established.** Day 13 was not representative. The tracker's clean 0-violation row is a
+  day-13 property: on 28 days it breaches 14 times (u=0.77) and 11 times (u=0.70).
+* **Not established.** That PPO cannot reach zero violations with more capacity. 16 days in
+  200k steps is ~12,500 steps per day-shape, less per shape than the single-day runs had; the
+  rungs are undertrained by construction and §11.5's shaped-reward experiment is still the
+  next test.
+* **Known limits.** (i) Day 28 is 49 % interpolated: the log stops around 13:20 and the
+  generator forward-fills 10.5 h of flat 240 RPS. It is kept in the test set and flagged in
+  `results/inventory.csv` — dropping it after seeing the scores would be choosing the test
+  set. (ii) 28 days is 28 samples: the seed spread on R1 (±5,821) is not much smaller than
+  the gap between rungs (~13,700). (iii) Checkpoint selection uses one validation day
+  (day 17); the test set is six days, touched once.
+
+### 12.7 Reproduce
+
+```bash
+# 28 days, the frozen split, the gate
+python utils/build_days.py
+python agents/train_sla.py --design-check --train-days data/days \
+    --split-json results/split.json --eval-trace data/days/day_17.csv   # 8/8
+
+# baselines on every day, then the learned rungs on the test days
+python utils/run_scores.py --run hold9 --policy hold --pods 9 --days all
+python utils/run_scores.py --run b1-u0.77 --policy b1 --u 0.77 --days all
+python agents/train_sla.py --timesteps 200000 --tag r1-day16-s2 --seed 2 --lambda-lr 0 \
+    --train-days data/days --split-json results/split.json \
+    --eval-trace data/days/day_17.csv
+python agents/train_sla.py --timesteps 200000 --tag r3-day16-s2 --seed 2 \
+    --lambda-lr 20000 --lambda-max 1000 --lambda-freeze-after 1000 \
+    --train-days data/days --split-json results/split.json \
+    --eval-trace data/days/day_17.csv
+python utils/run_scores.py --run r1-day16-s2 --policy model \
+    --model models/sla/r1-day16-s2.zip --seed 2 --days test
+python utils/run_scores.py --run r1-ablate-time-s2 --policy model \
+    --model models/sla/r1-day16-s2.zip --seed 2 --days test --ablate time
+
+# tables, figures
+python utils/split_report.py      # results/scores.csv -> results/summary.md + 3 tables
+python utils/make_plots.py        # plots/01..09
+```
+
+The artefacts are `results/scores.csv` (one row per run and day), `results/baselines.csv`,
+`results/policy_scores.csv`, `results/seed_table.csv`, `results/summary.md`,
+`results/inventory.csv`, `results/split.json` and `plots/01..09_*.png`. Every number in the
+tables above is one `score_policy.py` replay of one checkpoint on one day, priced under v1,
+v2 and v3 from that single trajectory.
+
 
 
