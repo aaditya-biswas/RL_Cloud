@@ -673,5 +673,139 @@ not make. The falsifiable version: 200k steps, reward v2, `HeadroomObs`, one see
 −116,640 with zero SLA violations**. The heuristic proves that is possible with 159 actions a
 day; if PPO lands on −60,088 ± 10 % it found the same statistic, if it sits at −116,640 with
 ~9 pods it is pinned, and if it beats −116,640 *while breaching* you have taught it the
-reward's error budget instead of the traffic.
+reward's error budget instead of the traffic. §11 reports which of those three happened,
+with three seeds per rung.
+
+## 11. What the rig measured
+
+§10 left one falsifiable question: at 200k steps, does PPO clear −116,640 **with zero
+violations**, and does it land near −60,088? Six learner runs (three seeds × two routes)
+plus the scripted rungs answer it. Every row below is produced by replaying a *finished*
+checkpoint through the real environment and pricing that single trajectory under v1, v2
+and v3 (`utils/score_policy.py --policy model`), so no row is a probe estimate and no two
+rows were priced by different code.
+
+### 11.1 The scripted rungs, including the margin sweep
+
+| policy | viol | pods | pod-h | churn | ret v3 | max ms | acts |
+|---|---|---|---|---|---|---|---|
+| constant 9 pods | 0 | 9.00 | 216.0 | 0 | −116,640 | 32 | 0 |
+| trailing max 480 s, u=0.65 | 0 | 5.35 | 128.4 | 832 | −70,152 | 58 | 178 |
+| trailing max 480 s, u=0.70 | 0 | 5.05 | 121.3 | 848 | −66,340 | 67 | 192 |
+| trailing max 480 s, u=0.72 | 0 | 4.84 | 116.2 | 784 | −63,538 | 67 | 170 |
+| trailing max 480 s, u=0.74 | 0 | 4.79 | 114.8 | 784 | −62,803 | 67 | 169 |
+| **trailing max 480 s, u=0.77** | **0** | **4.58** | **110.0** | **712** | **−60,088** | **67** | **159** |
+
+The sweep matters because it prices *safety*: the same rule, 10 % more conservative, is
+still clean at −66,340. That is inside the learned policies' scatter, and cheaper than the
+mean of the run where the price actually bit (−71,394). **The safety the learner lacked was
+available at a cost the learner was already paying.**
+
+### 11.2 The learned rungs (3 seeds, 200k steps, reward v3 + `HeadroomObs`)
+
+| rung | seeds | viol | rate % | pods | pod-h | churn | ret v3 | max ms | acts |
+|---|---|---|---|---|---|---|---|---|---|
+| R1 reward only (`--lambda-lr 0`) | 2,3,42 | 2 ± 1 (1–3) | 0.023 | 4.56 ± 0.64 | 109.3 | 1,960 | −62,996 ± 6,726 | 3,000 | 388 |
+| R2 Lagrangian, price step 50 | 2,3,42 | 2 (2–3) | 0.027 | 4.41 ± 0.51 | 105.8 | 3,781 | −63,261 ± 5,916 | 3,000 | 747 |
+| R3 Lagrangian, price step 20,000 | 2,3,42 | 1.7 (1–2) | 0.019 | 4.75 ± 0.60 | 113.9 | 8,205 | −71,394 ± 7,522 | 3,000 | 1,707 |
+
+Per seed, cost against violations: R1 −54,891/3, −71,360/1, −62,737/2; R2 −54,916/3,
+−67,968/2, −66,898/2; R3 −63,390/2, −81,464/1, −69,329/2.
+
+**Zero of nine checkpoints reached zero violations.** No seed of any route was accepted.
+
+### 11.3 The claim in §10, checked honestly
+
+* **Cost: met.** R1's mean −62,996 sits inside the predicted ±10 % band around −60,088
+  (−66,097 … −54,079), and its pod-hours (109.3) are *below* the tracker's (110.0).
+* **Safety: missed.** Every checkpoint breaches 1–3 steps a day, all with the same
+  signature: a 1-step spike to 3,000 ms latency.
+* **The reward redesign is legible where it matters.** Priced under v1, the same checkpoints
+  score −461,086 … −1,224,870 (r1-s2, r1-s3) against −59,465 for a policy that never
+  breaches. r1-s3's three 3,000 ms steps are worth 1.17 M of that gap and 9,000 under v3 —
+  ≈390 k per breach, the same order §8 quotes for the four-breach script. The cliff is real
+  on *learned* policies, not only on scripts.
+
+So the redesign did what it claimed for the *price* and not for the *constraint*: PPO found
+the heuristic's economics and not its safety.
+
+### 11.4 Why the price did not close the gap
+
+Three measurements, in increasing order of how much they rule out.
+
+1. **The dual step was three orders of magnitude too small.** R2 moved λ from 0 to 6.24 in
+   200k steps, because the update is `η · violation_rate` and the rate was 0.001:
+   `50 × 0.001 = 0.05` per update, against a pod that costs 1.5 per step. λ never became a
+   barrier, so R2 ≈ R1 by construction.
+2. **A price that does bite still does not comply.** R3 raised η to 20,000; λ hit its
+   ceiling of 1,000 on the *first* update and stayed pinned for the rest of the run, in all
+   three seeds. Compliance did not improve (0.019 % against R1's 0.023 %), cost fell a
+   further 13 % behind, churn quadrupled, and two seeds thrashed (2,487 and 2,523 realised
+   changes against R1's 243–630). "Make the price bigger" is now measured, not argued.
+3. **The residual breaches are a ±1-pod accuracy failure at a cliff, not a budget failure.**
+   The trace jumps by more than 100 rps 333 times a day (171 up, 162 down, 12 over 200) and
+   the learner absorbs all but one to three of them. It misses the ones where its fleet sits
+   exactly one pod below what that rate needs: at 4,572 (301.54 rps) R1 ramps `3→5` and takes
+   3,000 ms while the tracker ramps `5→7` and clears at 23 ms; at 6,148 — the same 301.54 rps,
+   a value the day holds for 24 steps and the *same* policy clears 23 times — R3 ramps `4→5`
+   and breaches while the tracker ramps `4→6` and clears at 32 ms. Latency on these edges is
+   a step, not a slope: 32 ms at six pods, 3,000 ms at five, for the same traffic. The learner
+   is not poorer — it spends 109.3 pod-hours against the tracker's 110.0 — it is one pod short
+   on 1–2 of the 8,640 steps. The rate is in the observation when the decision is made: both
+   policies see 301.54, and only one buys the sixth pod.
+
+That is what makes this a resolution limit rather than a pricing limit. λ = 1,000 puts a
+1,000-unit charge on those states against the 1.5 units an extra pod-step costs — a factor of
+600 — and the pod was still not bought. What 200k steps produced is a policy that maps rps to
+pods within one pod; the SLA is unforgiving at the cliff, where one pod is the whole
+difference. A per-step indicator price cannot repair that: it is one scalar on the 1–2 wrong
+states, and the hundreds of states where the policy is *about* to be one pod low are priced
+exactly like the states where it is safely high. A shaped charge — paid for running *near* the
+SLA, or for occupancy above a threshold — puts a slope on those hundreds of states and turns
+"be one pod short sometimes" into a cost. That is a hypothesis, and §11.5 says how to test it.
+
+### 11.5 What this rules in and out
+
+* **Ruled out.** A larger per-step price, or more steps at this reward, as the fix. R3 is
+  the direct test of that hypothesis, with three seeds.
+* **Ruled out.** That the 11-dim observation hides the decision: the rate that requires the
+  extra pod is in the observation *at* the decision step — both policies read 301.54, and
+  only one buys the sixth pod.
+* **Ruled in.** The reward stack and the rig are sound: `--design-check` is 6/6, the ladder
+  is reproduced cell-for-cell, and v1/v2/v3 are priced from one trajectory. The learned rows
+  are therefore a statement about PPO's optimum, not about a mispriced wrapper.
+* **Ruled in, as the next experiment.** Shape the price so it has a slope *before* the
+  breach — an occupancy or headroom charge above ~100 ms, or a constraint on the maximum (or
+  a high quantile) of latency over the episode — and keep the 480 s feature. §11.1 bounds
+  what that is worth: a clean policy costs between −60,088 and −66,340, so a shaped run has
+  ~6,000 units of margin to spend and still beat the acceptance line.
+
+One caveat, stated rather than hidden: this is 200k steps, one PPO configuration, one trace,
+three seeds. It is enough to reject the specific claim in §10 and to reject a bigger λ; it
+is not enough to claim that PPO cannot find the margin under a shaped reward — that is the
+experiment §11.5 proposes.
+
+### 11.6 Reproduce
+
+```bash
+# the gate, then the two routes (200k steps each; ~10 min on 12 cores)
+python agents/train_sla.py --design-check
+python agents/train_sla.py --timesteps 200000 --tag r1 --lambda-lr 0
+python agents/train_sla.py --timesteps 200000 --tag r2
+
+# the price that actually bites, and the seeds that turn a run into a result
+python agents/train_sla.py --timesteps 200000 --tag r3 \
+    --lambda-lr 20000 --lambda-max 1000 --lambda-freeze-after 1000 --seed 42
+
+# score a finished checkpoint on one rollout, priced under v1/v2/v3
+python utils/score_policy.py --policy model --model models/sla/r1.zip
+python utils/score_policy.py --policy b1 --u 0.70     # the margin sweep
+```
+
+TensorBoard records the constraint controller: `sla/price`, `sla/violation_rate`,
+`sla/mean_pods`, `sla/frozen`. A flat `sla/price` at 0 means you are looking at the
+reward-only route; a price pinned at `--lambda-max` means it saturated, and per §11.4
+saturation is not compliance.
+
+
 

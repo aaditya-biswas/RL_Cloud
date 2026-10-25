@@ -334,7 +334,7 @@ def make_callbacks(args: argparse.Namespace, train_env: VecNormalize,
         ),
         EvalCallback(
             eval_env,
-            best_model_save_path=str(MODELS_DIR / "best"),
+            best_model_save_path=str(MODELS_DIR / "best" / args.tag),
             log_path=str(LOGS_DIR / "eval"),
             eval_freq=max(1, args.eval_freq // args.n_envs),
             n_eval_episodes=args.n_eval_episodes,
