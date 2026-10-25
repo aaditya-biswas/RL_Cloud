@@ -745,14 +745,18 @@ Three measurements, in increasing order of how much they rule out.
 3. **The residual breaches are a ±1-pod accuracy failure at a cliff, not a budget failure.**
    The trace jumps by more than 100 rps 333 times a day (171 up, 162 down, 12 over 200) and
    the learner absorbs all but one to three of them. It misses the ones where its fleet sits
-   exactly one pod below what that rate needs: at 4,572 (301.54 rps) R1 ramps `3→5` and takes
-   3,000 ms while the tracker ramps `5→7` and clears at 23 ms; at 6,148 — the same 301.54 rps,
-   a value the day holds for 24 steps and the *same* policy clears 23 times — R3 ramps `4→5`
-   and breaches while the tracker ramps `4→6` and clears at 32 ms. Latency on these edges is
-   a step, not a slope: 32 ms at six pods, 3,000 ms at five, for the same traffic. The learner
-   is not poorer — it spends 109.3 pod-hours against the tracker's 110.0 — it is one pod short
-   on 1–2 of the 8,640 steps. The rate is in the observation when the decision is made: both
-   policies see 301.54, and only one buys the sixth pod.
+   one or two pods below what that rate needs, and the ramp is not the difference — both
+   policies take the same +2 step, from a different starting point: at 4,572 (301.54 rps) R1
+   ramps `3→5` and takes 3,000 ms while the tracker ramps `5→7` and clears at 23 ms; at 4,877
+   (443.08 rps) R1 ramps `5→7` and takes 3,000 ms while the tracker ramps `6→8` and clears at
+   42 ms; at 6,148 — the same 301.54 rps, a value the day holds for 24 steps and the *same*
+   policy clears 23 times — R3 ramps `4→5` and breaches while the tracker ramps `4→6` and
+   clears at 32 ms. Latency on these edges is a step, not a slope: 42 ms at eight pods,
+   3,000 ms at seven, for the same 443 rps. The learner is not poorer — it spends 109.3
+   pod-hours against the tracker's 110.0 — it sits two or more pods away from the tracker's
+   fleet on 674 of 8,640 steps (R1) and is unlucky on 1–2 of them. The rate is in the
+   observation when the decision is made: both policies see 301.54, and only one buys the
+   margin.
 
 That is what makes this a resolution limit rather than a pricing limit. λ = 1,000 puts a
 1,000-unit charge on those states against the 1.5 units an extra pod-step costs — a factor of
