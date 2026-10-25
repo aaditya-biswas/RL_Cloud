@@ -179,6 +179,15 @@ class LinearSLAReward(gym.Wrapper):
     * **Churn on the requested delta.** The stock reward charges the *realised*
       change, so asking for +2 while already at 15 pods costs nothing: 8,535 of
       the 200k reference agent's requests are exactly that no-op.
+
+    ``price`` is the *dual* lever, for the hard-constraint route: it adds
+    ``-price`` to a step that breaches the SLA and nothing to a step that does
+    not. ``0.0`` (the default) reproduces v3 exactly, so the reward-comparison
+    numbers in ``docs/DESIGN.md`` stay valid; a trainer raises it through
+    :meth:`set_price` while the policy keeps breaching (see
+    ``agents/train_sla.py::LagrangianCallback``). It is charged in reward units
+    per violating step, i.e. it is comparable to ``cost_weight * pods``, which
+    is 1.5 per pod per step.
     """
 
     def __init__(
@@ -190,6 +199,7 @@ class LinearSLAReward(gym.Wrapper):
         hard_ms: float = DEFAULT_SLA_LATENCY_MS,
         violation_cost: float = 200.0,
         cap_mult: Optional[float] = 5.0,
+        price: float = 0.0,
     ) -> None:
         super().__init__(env)
         self.cost_weight = float(cost_weight)
@@ -198,6 +208,24 @@ class LinearSLAReward(gym.Wrapper):
         self.hard_ms = float(hard_ms)
         self.violation_cost = float(violation_cost)
         self.cap_mult = cap_mult
+        self.price = 0.0
+        self.set_price(price)
+
+    def set_price(self, price: float) -> float:
+        """Set the per-violation price (the Lagrangian multiplier) and return it.
+
+        Exposed as a method, not just an attribute, so a training callback can
+        reach every sub-environment with ``vec_env.env_method("set_price", v)``.
+        """
+        value = float(price)
+        if value < 0.0:
+            raise ValueError(f"price must be >= 0, got {value}")
+        self.price = value
+        return self.price
+
+    def get_price(self) -> float:
+        """Current price, so the callback can read the vectorised envs back."""
+        return self.price
 
     def penalty(self, latency_ms: float) -> float:
         """Penalty term alone, so it can be plotted or debugged independently."""
@@ -210,10 +238,18 @@ class LinearSLAReward(gym.Wrapper):
     def step(self, action):
         observation, _, terminated, truncated, info = self.env.step(action)
         requested = int(ACTION_DELTAS[int(action)])
+        violation = float(bool(info["sla_violation"]))
         reward = -(
             self.cost_weight * float(info["active_pods"])
             + self.penalty(float(info["latency_ms"]))
             + self.churn_weight * abs(requested)
+            + self.price * violation
         )
-        info = {**info, "reward_v2": reward, "requested_delta": requested}
+        info = {
+            **info,
+            "reward_v2": reward,
+            "requested_delta": requested,
+            "violation": int(violation),
+            "constraint_price": self.price,
+        }
         return observation, reward, terminated, truncated, info
