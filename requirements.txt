@@ -11,3 +11,7 @@ stable-baselines3>=2.3
 # Logging and plots
 tensorboard>=2.14
 matplotlib>=3.7
+
+# The two-page report (utils/make_report.py)
+reportlab>=4.0
+pyphen>=0.14          # hyphenation in the justified two-column text

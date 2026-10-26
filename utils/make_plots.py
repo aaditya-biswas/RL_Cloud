@@ -1,4 +1,4 @@
-"""The nine figures for the 16/6/6 split experiment.
+"""The ten figures for the 16/6/6 split experiment.
 
 Every figure reads from the same two files the report does - ``results/scores.csv``
 (one row per run and day) and ``results/inventory.csv`` - plus, for the two
@@ -17,6 +17,7 @@ Figures
 07_state_action_map    where the policy acts, in (demand, headroom) space
 08_ablation_time       the same checkpoints with the time feature zeroed
 09_score_heatmap       run x test day return, the whole matrix at a glance
+10_cost_safety_frontier cost against breaches, and the cost split by term
 
 Usage
 -----
@@ -540,8 +541,133 @@ def figure_score_heatmap(scores: pd.DataFrame, only: list[str]) -> None:
     save(fig, "09_score_heatmap", only)
 
 
+def figure_frontier(scores: pd.DataFrame, only: list[str]) -> None:
+    """The trade-off the whole experiment is about: cost against breaches.
+
+    Left panel: the two scripted families (constant fleet, tracker sweep) as lines
+    and every learned seed as a point, so the reader can see where the rungs sit
+    relative to what a *clean* scripted policy costs. Right panel: the same rows
+    with their cost split into the three terms v3 charges, which is why the
+    cheapest arms are the ones running the fewest pods.
+
+    The scripted rows come from ``utils.frontier`` (the module behind
+    ``results/frontier.txt``), so the figure and the table cannot drift apart.
+    """
+    from utils.frontier import summarise_days
+
+    days = list(range(23, 29))  # the frozen test split, see results/split.json
+    holds = [(pods, summarise_days(days, pods=pods)) for pods in range(5, 11)]
+    sweep = [(u, summarise_days(days, u=u)) for u in
+             (0.55, 0.58, 0.62, 0.65, 0.70, 0.74, 0.77)]
+
+    test = scores[scores["split"] == "test"]
+    runs = [r for r in rl_runs(scores) if r in set(test["run"])]
+    per_seed = test[test["run"].isin(runs)].groupby("run").agg(
+        return_v3=("return_v3", "mean"), violations=("violations", "sum"),
+        avg_pods=("avg_pods", "mean"))
+    rung_of = {run: str(run).split("-")[0].upper() for run in per_seed.index}
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(12.5, 4.8),
+                                  gridspec_kw={"width_ratios": [1.25, 1]})
+
+    # --- left: cost against violations -------------------------------------
+    ax.plot([r["return_v3"] / 1000 for _, r in holds],
+            [r["violations"] for _, r in holds], "-o", color="#8c8c8c", ms=4,
+            lw=1.2, label="constant fleet (5-10 pods)")
+    for pods, row in holds:
+        ax.annotate(f"{pods}", (row["return_v3"] / 1000, row["violations"]),
+                    textcoords="offset points", xytext=(0, -12), ha="center",
+                    fontsize=7, color="#555555")
+    ax.plot([r["return_v3"] / 1000 for _, r in sweep],
+            [r["violations"] for _, r in sweep], "-s", color="#1f77b4", ms=4,
+            lw=1.2, label="tracker, u = 0.55 ... 0.77")
+    for index, (u, row) in enumerate(sweep):
+        # Alternate the label row: 0.70 and 0.74 are ~4k apart and would collide.
+        ax.annotate(f"{u:.2f}", (row["return_v3"] / 1000, row["violations"]),
+                    textcoords="offset points",
+                    xytext=(0, -11 if index % 2 == 0 else -21), ha="center", va="top",
+                    fontsize=6.5, color="#1f77b4")
+    for rung, colour, marker in (("R1", "#6a3d9a", "o"), ("R3", "#1b9e77", "D")):
+        rows = per_seed[[rung_of[r] == rung for r in per_seed.index]]
+        if rows.empty:
+            continue
+        ax.scatter(rows["return_v3"] / 1000, rows["violations"], s=70, marker=marker,
+                   color=colour, edgecolor="white", linewidth=0.6, zorder=5,
+                   label=f"{rung} (one point per seed)")
+        for run, row in rows.iterrows():
+            ax.annotate(str(run).split("-")[-1], (row["return_v3"] / 1000, row["violations"]),
+                        textcoords="offset points", xytext=(6, -3), fontsize=6.5,
+                        color=colour)
+    ax.axvline(HOLD_RETURN / 1000, color="#444444", ls=":", lw=1.0)
+    ax.axhline(0, color="#2ca02c", ls="--", lw=1.0)
+    ax.fill_between([HOLD_RETURN / 1000, -56], -0.9, 0.0, color="#2ca02c", alpha=0.12,
+                    zorder=0)
+
+    # The one comparison the experiment exists to make: same zero, 26 % cheaper.
+    clean = next(row for u, row in sweep if u == 0.62)
+    ax.annotate("", xy=(clean["return_v3"] / 1000, 0.0), xytext=(HOLD_RETURN / 1000, 0.0),
+                arrowprops={"arrowstyle": "->", "color": "#2ca02c", "lw": 1.1,
+                            "alpha": 0.8, "shrinkA": 2, "shrinkB": 2}, zorder=1)
+    ax.annotate(f"both clean: the tracker does it on {clean['avg_pods']:.2f} pods,\n"
+                f"{1 - clean['return_v3'] / HOLD_RETURN:.0%} cheaper than 9",
+                xy=((clean["return_v3"] / 1000 + HOLD_RETURN / 1000) / 2, 0.0),
+                xytext=(0, 26), textcoords="offset points", ha="center", va="bottom",
+                fontsize=6.8, color="#2ca02c",
+                bbox={"boxstyle": "round,pad=0.2", "fc": "white", "ec": "none", "alpha": 0.85})
+    offscale = " / ".join(f"{summarise_days(days, pods=pods)['return_v3'] / 1000:,.0f}k"
+                          for pods in (3, 4))
+    ax.text(-151.5, 3.0, "the rule's corner is the green\nstrip: no breach and no dearer\n"
+            "than hold-9. 3-4 pods are off-\n"
+            f"scale to the left ({offscale}).",
+            fontsize=6.5, color="#2ca02c", va="bottom")
+    ax.set_yscale("symlog", linthresh=1)
+    ax.set_ylim(-0.9, 3000)
+    ax.set_xlim(-152, -56)
+    ax.set_xlabel("mean test return v3 (thousands) - to the right is cheaper")
+    ax.set_ylabel("SLA violations over 6 test days (steps over 200 ms)")
+    ax.set_title("Cost against breaches: scripted frontier and every learned seed")
+    ax.legend(fontsize=7, loc="upper center", ncol=2)
+
+    # --- right: where the money goes ---------------------------------------
+    ordered = ["hold9", "b1-u0.70", "b1-u0.77"] + runs
+    labels, pods_cost, churn_cost, penalty = [], [], [], []
+    for run in ordered:
+        rows = test[test["run"] == run]
+        if rows.empty:
+            continue
+        penalty.append(float((-rows["return_v3"] - rows["cost_units"]
+                              - rows["churn_v3"]).mean()))
+        pods_cost.append(float(rows["cost_units"].mean()))
+        churn_cost.append(float(rows["churn_v3"].mean()))
+        labels.append(run)
+    y = np.arange(len(labels))
+    scale = 1 / 1000.0
+    ax2.barh(y, np.array(pods_cost) * scale, color="#4c72b0", label="pods (1.5 / pod-step)")
+    ax2.barh(y, np.array(churn_cost) * scale, left=np.array(pods_cost) * scale,
+             color="#dd8452", label="churn (4 / requested pod)")
+    ax2.barh(y, np.array(penalty) * scale,
+             left=(np.array(pods_cost) + np.array(churn_cost)) * scale,
+             color="#c44e52", label="SLA penalty (capped at 1,000 / step)")
+    ax2.set_yticks(y, labels)
+    ax2.invert_yaxis()
+    ax2.set_xlabel("mean cost per test day (thousands of reward units)")
+    fleet_share = min(pod / (pod + churn + pen) for pod, churn, pen
+                      in zip(pods_cost, churn_cost, penalty))
+    ax2.set_title(f"Where the cost goes: the fleet bill is {fleet_share:.0%}-100 % "
+                  "of every row")
+    ax2.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3)
+    for index, (pod, churn, pen) in enumerate(zip(pods_cost, churn_cost, penalty)):
+        ax2.text((pod + churn + pen) * scale, index,
+                 f"  {(churn + pen) / (pod + churn + pen):.1%} non-fleet",
+                 va="center", fontsize=6.5, color="#333333")
+
+    fig.suptitle("The test set in one picture: the learned arms buy cost with margin, "
+                 "and margin is what the gate is about")
+    save(fig, "10_cost_safety_frontier", only)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Draw the nine split figures.")
+    parser = argparse.ArgumentParser(description="Draw the ten split figures.")
     parser.add_argument("--scores", type=Path, default=RESULTS / "scores.csv")
     parser.add_argument("--inventory", type=Path, default=RESULTS / "inventory.csv")
     parser.add_argument("--baselines", type=Path, default=RESULTS / "baselines.csv")
@@ -583,6 +709,7 @@ def main(argv: list[str] | None = None) -> int:
         ("07_state_action_map", figure_state_action_map, (scores, only)),
         ("08_ablation_time", figure_ablation, (scores, only)),
         ("09_score_heatmap", figure_score_heatmap, (scores, only)),
+        ("10_cost_safety_frontier", figure_frontier, (scores, only)),
     )
     for name, function, call_args in jobs:
         if only and name.split("_", 1)[0] not in only:

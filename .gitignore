@@ -8,12 +8,18 @@ venv/
 # Large raw dataset (not distributed through git)
 raw/
 
-# Training artefacts
-models/
+# Training artefacts that are cheap to regenerate
+models/sla/checkpoints/
+models/sla/best/
 logs/
 runs/
 utils/metrics.csv
 utils/*.png
+
+# The scored checkpoints and their VecNormalize statistics ARE tracked, because the
+# assignment asks for the trained agent in the repository:
+#   models/sla/r{1,3}-day16-s{2,3,42}.zip   (+ *_vecnormalize.pkl)
+#   models/ppo_cloud_autoscaling.zip, models/cw20/, models/cw100/
 
 # OS / editor noise
 .DS_Store

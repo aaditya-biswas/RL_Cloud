@@ -74,6 +74,8 @@ The same checkpoints with `fraction_of_day` zeroed: if the score holds up, the p
 
 Cheapest arm: `r1-day16-s3` at -60,830 mean return v3 with 18 violation(s) on 6 test day(s) - cheaper than constant-9 by 55,810, but not clean, so it is reported as cheaper *and* breaching.
 
+What a clean policy costs on the same days is not in this table: `python utils/frontier.py` writes `results/frontier.txt`, the constant-fleet ladder plus the tracker sweep. The cheapest clean row there is `b1-u0.62` at -85,898 with 0 violations (6.53 pods), so clean is 26% cheaper than constant-9 - and still dearer than the cheapest learned arm above.
+
 ## 7. Reproduce
 
 ```bash
@@ -82,6 +84,7 @@ python utils/run_scores.py --run hold9 --policy hold --pods 9 --days all
 python utils/run_scores.py --run b1-u0.77 --policy b1 --u 0.77 --days all
 python utils/run_scores.py --run r1-day16-s2 --policy model \
     --model models/sla/r1-day16-s2.zip --seed 2 --days test
+python utils/frontier.py
 python utils/split_report.py
 ```
 

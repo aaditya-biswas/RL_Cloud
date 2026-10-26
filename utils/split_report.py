@@ -207,6 +207,42 @@ def split_section(inventory: pd.DataFrame | None, split_json: Path) -> list[str]
     return lines
 
 
+def frontier_note(path: Path | None = None) -> str:
+    """One line from ``results/frontier.txt``: what the cheapest clean policy costs.
+
+    The file is written by ``utils/frontier.py`` (constant fleets + the tracker
+    sweep on the same six days). Parsed rather than retyped, so the sentence and
+    the table cannot disagree; returns ``""`` when the file has not been built.
+    """
+    path = Path(path or RESULTS_DIR / "frontier.txt")
+    if not path.exists():
+        return ""
+    clean = []
+    for line in path.read_text().splitlines():
+        if not line.startswith("|") or "policy" in line or set(line) <= set("|- "):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) < 6:
+            continue
+        try:
+            violations = int(cells[2])
+            total = float(cells[4].replace(",", ""))
+            pods = float(cells[5])
+        except ValueError:
+            continue
+        if violations == 0:
+            clean.append((total, cells[0], pods))
+    if not clean:
+        return ""
+    total, label, pods = max(clean)
+    return (f"What a clean policy costs on the same days is not in this table: "
+            f"`python utils/frontier.py` writes `results/frontier.txt`, the constant-fleet "
+            f"ladder plus the tracker sweep. The cheapest clean row there is `{label}` at "
+            f"{total:,.0f} with 0 violations ({pods:.2f} pods), so clean is "
+            f"{1 - total / HOLD_RETURN:.0%} cheaper than constant-9 - and still dearer than "
+            f"the cheapest learned arm above.")
+
+
 def decision_lines(seeds: pd.DataFrame, baselines: pd.DataFrame) -> list[str]:
     """The verdict, generated from the tables rather than typed by hand."""
     if seeds.empty:
@@ -230,6 +266,10 @@ def decision_lines(seeds: pd.DataFrame, baselines: pd.DataFrame) -> list[str]:
                      f"{int(cheapest['days_with_violation'])} test day(s) - cheaper than "
                      f"constant-9 by {cheapest['mean_return_v3'] - hold_return:,.0f}, but "
                      f"not clean, so it is reported as cheaper *and* breaching.")
+        lines.append("")
+        note = frontier_note()
+        if note:
+            lines.append(note)
     else:
         for _, row in accepted.iterrows():
             lines.append(f"**Accepted: `{row['run']}`.** {int(row['violations'])} violations "
@@ -311,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
               "python utils/run_scores.py --run b1-u0.77 --policy b1 --u 0.77 --days all",
               "python utils/run_scores.py --run r1-day16-s2 --policy model \\",
               "    --model models/sla/r1-day16-s2.zip --seed 2 --days test",
+              "python utils/frontier.py",
               "python utils/split_report.py",
               "```", ""]
 
