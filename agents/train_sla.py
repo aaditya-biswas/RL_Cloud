@@ -453,16 +453,17 @@ def _replay(env, actions):
 
 
 def design_check(args: argparse.Namespace) -> int:
-    """Seven assertions that must hold before any learning number is quotable.
+    """Eight assertions that must hold before any learning number is quotable.
 
     1. wrapper reward == probe reward, wrapper order ``reward_inner``
     2. wrapper reward == probe reward, wrapper order ``obs_inner``
-    3. every observation inside the declared ``Box``
-    4. ``price`` arithmetic: ``reward(p) == reward(0) - p * violations``
-    5. the vectorised env: ``env_method`` price plumbing, ``clip_reward=inf``
-    6. the day split (needs ``--train-days``): episodes draw from the split,
+    3. every observation inside the declared ``Box`` (``reward_inner``)
+    4. every observation inside the declared ``Box`` (``obs_inner``)
+    5. ``price`` arithmetic: ``reward(p) == reward(0) - p * violations``
+    6. the vectorised env: ``env_method`` price plumbing, ``clip_reward=inf``
+    7. the day split (needs ``--train-days``): episodes draw from the split,
        reproducibly per seed, and stay inside the ``Box`` on every day
-    7. the eval env never draws a training day (``use_days=False``)
+    8. the eval env never draws a training day (``use_days=False``)
     """
     from utils.design_probe import reward_family
 
@@ -634,7 +635,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--design-check", action="store_true",
-                        help="Run the five pre-flight assertions and exit.")
+                        help="Run the eight pre-flight assertions and exit.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Build the stack, take 32 random steps, exit.")
     parser.add_argument("--trace", type=Path, default=None,

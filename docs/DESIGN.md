@@ -930,6 +930,15 @@ it. That is a narrower and more useful claim than "the model learned the diurnal
   the gap between rungs (~13,700). (iii) Checkpoint selection uses one validation day
   (day 17); the test set is six days, touched once.
 
+The §11 rows are the single-day control for this section: same code, same reward stack, same
+scorer, one day (13) instead of sixteen. The cost numbers barely move (−62,996 for R1 on day
+13, −65,791 across six unseen days) and even the *rate* of breaches reproduces (~2 per seed
+per day in both). What the single day could not show is the spread across days: on the six
+test days each R1 seed breaches on 2 to 5 of them, day 28 is bad for all three seeds (3, 3,
+4) while day 26 is bad for one, and the per-seed total ranges from 5 to 18. A one-day
+benchmark can therefore report "1-3 breaches" and hide a policy that misses on five days out
+of six.
+
 ### 12.7 Reproduce
 
 ```bash
@@ -963,6 +972,12 @@ The artefacts are `results/scores.csv` (one row per run and day), `results/basel
 `results/inventory.csv`, `results/split.json` and `plots/01..09_*.png`. Every number in the
 tables above is one `score_policy.py` replay of one checkpoint on one day, priced under v1,
 v2 and v3 from that single trajectory.
+
+The pre-flight gate for the code above is `python agents/train_sla.py --design-check
+--train-days data/days --split-json results/split.json --eval-trace data/days/day_17.csv`
+(8/8). It does not score anything; it asserts that the price arithmetic, the `Box`, the price
+plumbing through `make_vec_env`, the day sampling and the eval-day isolation all behave as
+this section claims.
 
 
 
